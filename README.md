@@ -2,54 +2,60 @@
 
 Each Renegade box carries an NFC tag. Tapping it with a phone opens that box's
 page at https://yarvo-pty-ltd.github.io/box-stock/, where each item has a
-plus and a minus button. The counts live in a Google Sheet behind a Google
-Apps Script web app (`apps-script/Code.gs`), and every change is written to
-the Sheet's `Log` tab.
+plus and a minus button.
 
-## Set up the sheet (once)
+The counts live in `stock.json` in the private repo
+`Yarvo-Pty-Ltd/box-stock-data`. Every save is a commit, so the repo's history
+is the stock log: `50 mm PVC elbows -2 = 10`. Taps made in a burst go out as
+one commit.
 
-1. Create a Google Sheet named `Box Stock`.
-2. Open Extensions > Apps Script, replace the editor contents with
-   `apps-script/Code.gs`, and save.
-3. Select `setup` in the function list and click Run. Approve the access
-   prompt. The execution log prints `Key: <16 characters>`. Keep the key.
-4. Deploy > New deployment > type Web app. Set Execute as: Me and
-   Who has access: Anyone. Deploy, then copy the Web app URL.
-5. Put that URL in `config.js` as `window.STOCK_API` and push.
+## Make the tag code (once)
 
-The Web app URL is safe to commit. The key is not: it goes only on the tags.
+The tag code is a fine-grained GitHub token that can only read and write
+`box-stock-data`.
+
+1. Open https://github.com/settings/personal-access-tokens/new
+2. Name: `box-stock tags`. Resource owner: `Yarvo-Pty-Ltd`.
+3. Expiration: the longest offered. GitHub emails before it runs out.
+4. Repository access: Only select repositories > `box-stock-data`.
+5. Permissions > Repository > Contents: Read and write. Nothing else.
+6. Generate, then copy the token (`github_pat_...`). If the org asks for
+   approval, approve it under the org's Settings > Personal access tokens.
+
+The token goes only on the tags and phones. Never commit it.
 
 ## Write a tag
 
-1. Open `https://yarvo-pty-ltd.github.io/box-stock/#k=<key>` once on your
-   phone. The phone keeps the key after that.
+1. On your phone, open https://yarvo-pty-ltd.github.io/box-stock/ and paste
+   the token into "No tag yet?". The phone keeps it after that.
 2. Add the box, open it, and tap Copy link at the bottom of its page.
 3. In an NFC writer app (NFC Tools on iPhone or Android), write the link to
    an NTAG215 sticker as a URL record, then stick it on the box.
 
 ## Add it to the home screen
 
-Tap a box tag first, so the address carries the key, then in Safari use
+Tap a box tag first, so the address carries the code, then in Safari use
 Share > Add to Home Screen. The icon opens the app at that box. An NFC tap
 still opens Safari, not the home screen app: iOS sends every tag to Safari.
 
 `manifest.webmanifest` has no `start_url` on purpose. Without one the app
-opens at the address it was added from, which is what carries the key.
+opens at the address it was added from, which is what carries the code.
 
 Icons live in `assets/icons/`: `icon-1024.png` is the master (also the App
 Store size), the others are cut from it. The art came from Codex imagegen,
 and the wordmark on top is the site's own Inter Tight 700 in `#008A8A`.
 
-## Change the key
+## Change the code
 
-Anyone who reads a tag has the key. To cut off old links, run `newKey` in the
-Apps Script editor, then rewrite every tag with the new link.
+Anyone who reads a tag has the code, and with it can change `stock.json`.
+The history keeps every version, so a bad change can be reverted. To cut off
+old tags, delete the token in GitHub settings, make a new one, and rewrite
+every tag.
 
-## Change the script
+## Undo a wrong count
 
-After editing `Code.gs`, use Deploy > Manage deployments > Edit > New version.
-A new deployment instead of a new version changes the URL.
+Edit the number on the box page, or revert the commit in `box-stock-data`.
 
-Tests, run from this folder: `node gates/test-apps-script.js` (script against
-a mock sheet) and `node gates/smoke.js` (page in headless Edge against the
-mock).
+Tests, run from this folder: `node gates/test-store.js` (stock rules and two
+phones saving at once) and `node gates/smoke.js` (page in headless Edge
+against a fake GitHub API).

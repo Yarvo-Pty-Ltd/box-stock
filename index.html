@@ -121,6 +121,7 @@ input:focus { border-color: var(--teal); box-shadow: 0 0 0 1px var(--teal); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 <script src="config.js"></script>
+<script src="store.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -137,7 +138,9 @@ input:focus { border-color: var(--teal); box-shadow: 0 0 0 1px var(--teal); }
 <div id="status" aria-live="polite"></div>
 
 <script>
-const API = window.STOCK_API || '';
+const REPO = window.STOCK_REPO || '';
+const FILE = window.STOCK_FILE || 'stock.json';
+const API_BASE = window.STOCK_API_BASE || 'https://api.github.com';
 const QKEY = 'box-stock-queue';
 const KKEY = 'box-stock-key';
 
@@ -145,15 +148,15 @@ const app = document.getElementById('app');
 const syncEl = document.getElementById('sync');
 const statusEl = document.getElementById('status');
 const S = {
-  boxes: new Map(), items: new Map(), sheet: '', loaded: false,
+  boxes: new Map(), items: new Map(), loaded: false, lastWrite: 0,
   offline: false, badKey: false, editing: false, armed: null, view: null,
 };
 let KEY = null;
 try { KEY = localStorage.getItem(KKEY); } catch {}
 
-// Taps not yet confirmed by the sheet. Kept in localStorage so a locked
-// phone or closed tab does not lose them; each keeps its request id, so a
-// resend after lost signal is applied once by the script.
+// Taps not yet saved to the repo. Kept in localStorage so a locked phone or
+// closed tab does not lose them; each keeps its request id, and the stock file
+// remembers recent ids, so a resend after lost signal counts once.
 let queue = [];
 try { queue = JSON.parse(localStorage.getItem(QKEY) || '[]'); } catch {}
 function saveQueue() { try { localStorage.setItem(QKEY, JSON.stringify(queue)); } catch {} }
@@ -176,7 +179,7 @@ function h(tag, props, ...kids) {
   return el;
 }
 
-const canEdit = () => !!API && !!KEY && !S.badKey;
+const canEdit = () => !!REPO && !!KEY && !S.badKey;
 const num = v => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const hasMin = it => it.min !== null && it.min !== undefined && it.min !== '';
 const queued = id => queue.reduce((s, o) => s + (o.id === id ? o.delta : 0), 0);
@@ -207,65 +210,89 @@ function say(msg, ms = 6000) {
   if (msg && ms) statusTimer = setTimeout(() => say(''), ms);
 }
 
-// ---------- talking to the sheet ----------
+// ---------- talking to GitHub ----------
 
-// text/plain keeps the request "simple", so the browser sends no CORS preflight,
-// which Apps Script cannot answer.
-async function post(body) {
+// The stock list is one JSON file in a private repo. The tag code is a GitHub
+// token that can only read and write that repo's contents.
+const b64encode = str => { let bin = ''; for (const b of new TextEncoder().encode(str)) bin += String.fromCharCode(b); return btoa(bin); };
+const b64decode = b64 => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g, '')), c => c.charCodeAt(0)));
+
+function err(message, kind) { const e = new Error(message); if (kind) e[kind] = true; return e; }
+
+async function gh(method, body) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), 20000);
   try {
-    const r = await fetch(API, {
-      method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ ...body, k: KEY }), signal: ctl.signal,
-    });
-    const text = await r.text();
-    try { return JSON.parse(text); }
-    catch { const e = new Error('The stock script sent back a page instead of data. Check its deployment is set to Anyone.'); e.server = true; throw e; }
+    let r;
+    try {
+      r = await fetch(API_BASE + '/repos/' + REPO + '/contents/' + FILE, {
+        method, cache: 'no-store', signal: ctl.signal,
+        headers: { Authorization: 'Bearer ' + KEY, Accept: 'application/vnd.github+json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    } catch { throw err('no connection', 'offline'); }
+    if (r.status === 401) throw err('GitHub rejected the tag code', 'badKey');
+    if (r.status === 409 || (r.status === 422 && method === 'PUT')) throw err('another phone saved first', 'conflict');
+    if (r.status === 404) throw err('this tag code cannot see ' + REPO + '/' + FILE + '. The token needs Contents access to that repo.');
+    if (r.status === 403) throw err('GitHub refused the change (403). The token may be read-only or over its hourly limit.');
+    if (!r.ok) throw err('GitHub answered ' + r.status + ' for ' + REPO + '/' + FILE + '. Try again in a minute.');
+    return r.json();
   } finally { clearTimeout(t); }
 }
 
-function applyState(res) {
-  S.boxes = new Map(res.boxes.map(b => [b.id, b]));
-  S.items = new Map(res.items.map(i => [i.id, i]));
-  S.sheet = res.sheet || '';
+const io = {
+  async read() {
+    const j = await gh('GET');
+    let state;
+    try { state = JSON.parse(b64decode(j.content)); }
+    catch { throw err(FILE + ' in ' + REPO + ' is not valid JSON. Fix or revert it in the repo.'); }
+    return { state: BoxStore.normalise(state), sha: j.sha };
+  },
+  async write(state, sha, message) {
+    const j = await gh('PUT', { message, sha, content: b64encode(JSON.stringify(state, null, 2) + '\n') });
+    return j.content.sha;
+  },
+};
+
+function applyState(state) {
+  S.boxes = new Map(state.boxes.map(b => [b.id, b]));
+  S.items = new Map(state.items.map(i => [i.id, i]));
   S.loaded = true;
   S.offline = false;
 }
 
-function serverError(res, what) {
-  if (res.code === 'bad_key') { S.badKey = true; render(); return; }
-  say(what + ': ' + res.error, 9000);
+function fail(e, what) {
+  if (e.badKey) { S.badKey = true; render(); return; }
+  if (e.offline) { S.offline = true; paintSync(); return; }
+  say(what + ': ' + e.message, 9000);
 }
 
+const now = () => new Date().toISOString();
+
+// Sends every queued tap as one commit.
 let sendTimer, retryTimer, draining = false;
 async function drain() {
   clearTimeout(sendTimer);
   if (draining || !queue.length || !canEdit()) return;
   draining = true;
+  const batch = queue.slice();
+  for (const o of batch) o.sent = true;
+  saveQueue();
+  let ok = false;
   try {
-    while (queue.length) {
-      const op = queue[0];
-      op.sent = true;
-      saveQueue();
-      let res;
-      try {
-        res = await post({ rid: op.rid, op: 'bump', id: op.id, delta: op.delta });
-      } catch (e) {
-        S.offline = !e.server;
-        if (e.server) say(e.message, 9000);
-        clearTimeout(retryTimer);
-        retryTimer = setTimeout(drain, 8000);
-        return;
-      }
-      if (res.code === 'busy') { clearTimeout(retryTimer); retryTimer = setTimeout(drain, 2000); return; }
-      queue.shift();
-      saveQueue();
-      if (res.error) { serverError(res, 'Count not saved'); if (S.badKey) return; continue; }
-      applyState(res);
-    }
+    const res = await BoxStore.commit(io, batch.map(o => ({ op: 'bump', id: o.id, delta: o.delta, rid: o.rid, at: o.at })));
+    queue = queue.filter(o => !batch.includes(o));
+    saveQueue();
+    S.lastWrite = Date.now();
+    applyState(res.state);
+    if (res.errors.length) say('Not saved: ' + res.errors[0].message, 9000);
+    ok = true;
+  } catch (e) {
+    fail(e, 'Counts not saved');
+    if (!S.badKey) { clearTimeout(retryTimer); retryTimer = setTimeout(drain, e.offline ? 8000 : 15000); }
   } finally {
     draining = false;
+    if (ok && queue.length) sendTimer = setTimeout(drain, 300);
     refresh();
   }
 }
@@ -277,9 +304,10 @@ function bump(id, d) {
   const last = queue[queue.length - 1];
   if (last && !last.sent && last.id === id) {
     last.delta += d;
+    last.at = now();
     if (!last.delta) queue.pop();
   } else {
-    queue.push({ rid: rid(), op: 'bump', id, delta: d });
+    queue.push({ rid: rid(), op: 'bump', id, delta: d, at: now() });
   }
   saveQueue();
   paintQty(id);
@@ -288,31 +316,33 @@ function bump(id, d) {
   sendTimer = setTimeout(drain, 700);
 }
 
+// GitHub can serve the old file for a few seconds after a save, so polling
+// waits 8 s after this phone's own write rather than flick a count back.
 async function poll() {
-  if (!API || !KEY || S.badKey || draining || queue.length || document.visibilityState === 'hidden') return;
+  if (!REPO || !KEY || S.badKey || draining || acting || queue.length || document.visibilityState === 'hidden' || Date.now() - S.lastWrite < 8000) return;
   try {
-    const res = await post({ op: 'read' });
-    if (res.error) serverError(res, 'Could not load stock');
-    else if (!draining && !queue.length) applyState(res);
+    const { state } = await io.read();
+    if (!draining && !acting && !queue.length) applyState(state);
   } catch (e) {
-    if (e.server) say(e.message, 9000);
-    else S.offline = true;
+    fail(e, 'Could not load stock');
   }
   refresh();
 }
 
 // One-off actions (adding, renaming, deleting) need signal and report back.
 let acting = false;
-async function act(body, what) {
+async function act(op, what) {
   if (acting) { say('Still saving the last change. Try again in a moment.'); return null; }
   acting = true;
   try {
-    const res = await post(body);
-    if (res.error) { serverError(res, what); return null; }
-    applyState(res);
+    const res = await BoxStore.commit(io, [{ ...op, rid: rid(), at: now() }]);
+    S.lastWrite = Date.now();
+    applyState(res.state);
+    if (res.errors.length) { say(what + ': ' + res.errors[0].message, 9000); return null; }
     return res;
   } catch (e) {
-    say(e.server ? e.message : what + ': no connection. Try again once you have signal.', 9000);
+    if (e.offline) say(what + ': no connection. Try again once you have signal.', 9000);
+    else fail(e, what);
     return null;
   } finally {
     acting = false;
@@ -343,7 +373,7 @@ async function addItem(boxId, form) {
   const el = form.elements;
   const name = el.itemName.value.trim();
   if (!name) return;
-  const ok = await act({ op: 'addItem', box: boxId, name, unit: el.itemUnit.value.trim(),
+  const ok = await act({ op: 'addItem', box: boxId, name, unit: el.itemUnit.value.trim(), newId: 'i' + rid(),
     qty: Math.max(0, Math.floor(num(el.itemQty.value))), min: el.itemMin.value.trim() === '' ? '' : Math.max(0, Math.floor(num(el.itemMin.value))) }, 'Item not added');
   if (ok) { form.reset(); const f = document.getElementById('itemName'); if (f) f.focus(); }
 }
@@ -386,6 +416,19 @@ function header(title, sub, extra, eyebrow = 'Stock') {
     extra || null);
 }
 
+function codeForm() {
+  return h('form', { class: 'panel', onsubmit: e => {
+    e.preventDefault();
+    const v = e.target.elements.codeIn.value.trim();
+    if (v) location.hash = 'k=' + encodeURIComponent(v);
+  } },
+    h('h2', { text: 'No tag yet?' }),
+    h('p', { text: 'Paste the stock code (the GitHub token) to set up boxes.' }),
+    h('div', { class: 'row' },
+      h('input', { id: 'codeIn', name: 'codeIn', type: 'text', autocomplete: 'off', spellcheck: 'false', style: 'flex:1 1 200px', 'aria-label': 'Stock code' }),
+      h('button', { class: 'btn primary', type: 'submit', text: 'Use code' })));
+}
+
 function notice(title, strong, body) {
   return [header(title), h('div', { class: 'panel empty' }, h('strong', { text: strong }), body)];
 }
@@ -422,7 +465,7 @@ function listView() {
     h('div', { class: 'row' },
       h('input', { id: 'boxName', name: 'boxName', type: 'text', placeholder: 'e.g. Renegade 1 Plumbing', autocomplete: 'off', style: 'flex:1 1 200px', 'aria-label': 'Box name' }),
       h('button', { class: 'btn primary', type: 'submit', text: 'Add box' }))));
-  if (S.sheet) out.push(h('div', { class: 'foot' }, h('a', { href: S.sheet, target: '_blank', rel: 'noopener', text: 'Open the stock sheet' }), ' (needs access to the Google Sheet)'));
+  out.push(h('div', { class: 'foot' }, h('a', { href: 'https://github.com/' + REPO + '/commits/main/' + FILE, target: '_blank', rel: 'noopener', text: 'Change history' }), ' (needs access to the ' + REPO + ' repo)'));
   return out;
 }
 
@@ -522,18 +565,18 @@ function render() {
   const focus = document.activeElement && app.contains(document.activeElement) ? document.activeElement.id : null;
 
   let kids;
-  if (!API) kids = notice('Box Stock', 'Not connected yet', 'config.js has no stock script address. Add the Apps Script web app URL to it.');
-  else if (!KEY) kids = notice('Box Stock', 'Tap a box tag', 'Hold your phone to the NFC tag on a Renegade box to open its stock.');
-  else if (S.badKey) kids = notice('Box Stock', 'This tag link is out of date', 'The stock code changed. Tap a box tag that has the new link, or ask Ethan for one.');
-  else if (!S.loaded) kids = [header(S.view ? 'Box' : 'Box Stock', S.offline ? 'Can’t reach the stock sheet yet. It keeps trying.' : 'Loading…')];
+  if (!REPO) kids = notice('Box Stock', 'Not connected yet', 'config.js names no stock repo. Set STOCK_REPO to the private repo that holds stock.json.');
+  else if (!KEY) kids = [...notice('Box Stock', 'Tap a box tag', 'Hold your phone to the NFC tag on a Renegade box to open its stock.'), codeForm()];
+  else if (S.badKey) kids = [...notice('Box Stock', 'This tag code no longer works', 'It may have expired or been replaced. Tap a box tag with the new link, or ask Ethan for one.'), codeForm()];
+  else if (!S.loaded) kids = [header(S.view ? 'Box' : 'Box Stock', S.offline ? 'Can’t reach the stock list yet. It keeps trying.' : 'Loading…')];
   else kids = S.view ? boxView(S.view) : listView();
   app.replaceChildren(...kids);
 
-  // Name and low-level fields show the sheet's value unless that field has focus.
+  // Name and low-level fields show the saved value unless that field has focus.
   for (const el of app.querySelectorAll('input[id]')) {
     if (!(el.id in keep)) continue;
-    const sheetField = el.id.startsWith('name-') || el.id.startsWith('min-');
-    if (!sheetField || el.id === focus) el.value = keep[el.id];
+    const savedField = el.id.startsWith('name-') || el.id.startsWith('min-');
+    if (!savedField || el.id === focus) el.value = keep[el.id];
   }
   if (focus) { const f = document.getElementById(focus); if (f) f.focus(); }
   paintSync();
