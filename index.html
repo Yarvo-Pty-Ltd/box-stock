@@ -77,7 +77,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--teal); outline-
 
 .item { display: flex; align-items: center; gap: 12px; padding: 14px 12px 14px 18px; min-height: 84px; }
 .item-main { flex: 1; min-width: 0; }
-.item-name { font: 400 20px/1.2 var(--font-display); overflow-wrap: anywhere; }
+.item-name { font: 400 20px/1.2 var(--font-display); overflow-wrap: break-word; }
 .item-sub { font: 400 12px/1.3 var(--font-ui); color: var(--ink-soft); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
 .chip { font: 600 10px/1 var(--font-ui); letter-spacing: .14em; text-transform: uppercase; padding: 5px 8px; background: var(--low-bg); color: var(--low); }
 .item.low { box-shadow: inset 3px 0 0 var(--low); }
@@ -116,6 +116,32 @@ input:focus { border-color: var(--teal); box-shadow: 0 0 0 1px var(--teal); }
 .banner { padding: 12px 16px; background: var(--sand); border: 1px solid var(--line); border-radius: 4px; font: 400 13px/1.45 var(--font-ui); }
 .foot { text-align: center; font: 400 12px/1.4 var(--font-ui); color: var(--ink-soft); }
 
+.thumbbtn { flex: none; width: 48px; height: 48px; padding: 0; border: 1px solid var(--line); border-radius: 3px; background: var(--sand); overflow: hidden; }
+.thumbbtn img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumbbtn img:not([src]) { visibility: hidden; }
+/* On a phone a photo row cannot fit thumb, name and the glove-sized stepper
+   on one line, so the stepper takes a second line. */
+@media (max-width: 440px) {
+  .item.has-photo { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 10px 12px; }
+  .item.has-photo .stepper { grid-column: 1 / -1; justify-self: end; }
+}
+.vh { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; clip-path: inset(50%); }
+label.btn { display: inline-block; cursor: pointer; }
+.edit-row .photo-row { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.btn.small { padding: 10px 14px; font-size: 11px; }
+.btn.block { width: 100%; padding: 18px; font-size: 14px; }
+.kitline { display: flex; align-items: center; gap: 12px; padding: 12px 18px; min-height: 72px; }
+.kitline .need { font: 400 26px/1 var(--font-display); white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
+.kitline.short { box-shadow: inset 3px 0 0 var(--low); }
+.kit-edit { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 12px 18px; }
+.kit-edit input[type="number"], .count-row input[type="number"] { width: 5em; text-align: center; }
+.count-row { display: flex; align-items: center; gap: 12px; padding: 12px 18px; min-height: 72px; }
+.count-row input[type="number"] { font: 400 22px/1 var(--font-display); padding: 10px 6px; }
+select { width: 100%; min-width: 0; padding: 11px 12px; border: 1px solid var(--line-hard); border-radius: 3px; background: var(--page); font: 400 16px/1.2 var(--font-ui); color: var(--ink); }
+.took { display: grid; gap: 12px; }
+#lightbox { position: fixed; inset: 0; z-index: 30; background: rgba(70, 60, 50, .94); display: grid; place-items: center; gap: 12px; align-content: center; padding: calc(16px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); cursor: zoom-out; }
+#lightbox img { max-width: 100%; max-height: 80vh; background: var(--sand); }
+#lightbox p { margin: 0; color: var(--page); font: 400 14px/1.4 var(--font-ui); text-align: center; }
 #status { position: fixed; left: 0; right: 0; bottom: 0; padding: 0 max(16px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); display: flex; justify-content: center; pointer-events: none; }
 #status div { max-width: 560px; width: 100%; background: var(--ink); color: var(--page); padding: 14px 18px; font: 400 14px/1.4 var(--font-ui); pointer-events: auto; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -136,6 +162,7 @@ input:focus { border-color: var(--teal); box-shadow: 0 0 0 1px var(--teal); }
   </div>
 </div>
 <div id="status" aria-live="polite"></div>
+<div id="lightbox" hidden><img alt=""><p></p></div>
 
 <script>
 const REPO = window.STOCK_REPO || '';
@@ -148,7 +175,8 @@ const app = document.getElementById('app');
 const syncEl = document.getElementById('sync');
 const statusEl = document.getElementById('status');
 const S = {
-  boxes: new Map(), items: new Map(), loaded: false, lastWrite: 0,
+  boxes: new Map(), items: new Map(), kits: new Map(), loaded: false, lastWrite: 0,
+  kitView: null, counting: false, lastTake: null,
   offline: false, badKey: false, editing: false, armed: null, view: null,
 };
 let KEY = null;
@@ -219,24 +247,25 @@ const b64decode = b64 => new TextDecoder().decode(Uint8Array.from(atob(b64.repla
 
 function err(message, kind) { const e = new Error(message); if (kind) e[kind] = true; return e; }
 
-async function gh(method, body) {
+// path is relative to the repo root; raw returns the file's bytes as a Blob.
+async function gh(method, body, path = FILE, raw = false) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), 20000);
   try {
     let r;
     try {
-      r = await fetch(API_BASE + '/repos/' + REPO + '/contents/' + FILE, {
+      r = await fetch(API_BASE + '/repos/' + REPO + '/contents/' + path, {
         method, cache: 'no-store', signal: ctl.signal,
-        headers: { Authorization: 'Bearer ' + KEY, Accept: 'application/vnd.github+json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+        headers: { Authorization: 'Bearer ' + KEY, Accept: raw ? 'application/vnd.github.raw' : 'application/vnd.github+json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
         body: body ? JSON.stringify(body) : undefined,
       });
     } catch { throw err('no connection', 'offline'); }
     if (r.status === 401) throw err('GitHub rejected the tag code', 'badKey');
     if (r.status === 409 || (r.status === 422 && method === 'PUT')) throw err('another phone saved first', 'conflict');
-    if (r.status === 404) throw err('this tag code cannot see ' + REPO + '/' + FILE + '. The token needs Contents access to that repo.');
+    if (r.status === 404) throw err('this tag code cannot see ' + REPO + '/' + path + '. The token needs Contents access to that repo.', 'notFound');
     if (r.status === 403) throw err('GitHub refused the change (403). The token may be read-only or over its hourly limit.');
-    if (!r.ok) throw err('GitHub answered ' + r.status + ' for ' + REPO + '/' + FILE + '. Try again in a minute.');
-    return r.json();
+    if (!r.ok) throw err('GitHub answered ' + r.status + ' for ' + REPO + '/' + path + '. Try again in a minute.');
+    return raw ? r.blob() : r.json();
   } finally { clearTimeout(t); }
 }
 
@@ -257,6 +286,7 @@ const io = {
 function applyState(state) {
   S.boxes = new Map(state.boxes.map(b => [b.id, b]));
   S.items = new Map(state.items.map(i => [i.id, i]));
+  S.kits = new Map(state.kits.map(k => [k.id, k]));
   S.loaded = true;
   S.offline = false;
 }
@@ -335,11 +365,12 @@ async function act(op, what) {
   if (acting) { say('Still saving the last change. Try again in a moment.'); return null; }
   acting = true;
   try {
-    const res = await BoxStore.commit(io, [{ ...op, rid: rid(), at: now() }]);
+    const full = { ...op, rid: rid(), at: now() };
+    const res = await BoxStore.commit(io, [full]);
     S.lastWrite = Date.now();
     applyState(res.state);
     if (res.errors.length) { say(what + ': ' + res.errors[0].message, 9000); return null; }
-    return res;
+    return { ...res, op: full };
   } catch (e) {
     if (e.offline) say(what + ': no connection. Try again once you have signal.', 9000);
     else fail(e, what);
@@ -398,6 +429,182 @@ async function deleteBox(id) {
   if (await act({ op: 'deleteBox', id }, 'Box not deleted')) { location.hash = ''; say('Box deleted. Wipe or reuse its NFC tag.'); }
 }
 
+// ---------- photos ----------
+
+// Photos live in the data repo as images/<item id>.jpg. A phone photo is
+// shrunk and re-encoded before upload: about 150 KB instead of 3 MB, and
+// re-encoding through a canvas drops the EXIF block with its GPS position.
+const PHOTO_MAX = 1000;
+const photoPath = id => 'images/' + id + '.jpg';
+
+async function shrink(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const scale = Math.min(1, PHOTO_MAX / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(img.naturalWidth * scale));
+    c.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return await new Promise((res, rej) => {
+      const done = b => (b ? res(b) : rej(err('the photo could not be converted to JPEG')));
+      c.toBlob(done, 'image/jpeg', 0.8);
+    });
+  } catch (e) {
+    throw e.message ? e : err('that file is not a photo this phone can open');
+  } finally { URL.revokeObjectURL(url); }
+}
+
+async function blobB64(blob) {
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+// Each photo downloads once per phone: kept in the browser cache under its
+// version (the file sha), so a replaced photo is fetched again.
+const photoUrls = new Map();
+const photoLoading = new Set();
+const photoKey = sha => new URL('photo-cache/' + sha, location.href).href;
+async function photoCache() {
+  try { return 'caches' in window ? await caches.open('box-stock-photos') : null; } catch { return null; }
+}
+function keepPhoto(sha, blob) {
+  photoUrls.set(sha, URL.createObjectURL(blob));
+  photoCache().then(c => c && c.put(photoKey(sha), new Response(blob, { headers: { 'Content-Type': 'image/jpeg' } }))).catch(() => {});
+}
+async function loadPhoto(id, sha) {
+  if (photoUrls.has(sha) || photoLoading.has(sha)) return;
+  photoLoading.add(sha);
+  try {
+    const c = await photoCache();
+    const hit = c ? await c.match(photoKey(sha)) : null;
+    if (hit) photoUrls.set(sha, URL.createObjectURL(await hit.blob()));
+    else keepPhoto(sha, await gh('GET', null, photoPath(id), true));
+    paintPhotos();
+  } catch { /* a missing photo leaves an empty square; the next render tries again */ }
+  finally { photoLoading.delete(sha); }
+}
+function paintPhotos() {
+  for (const img of app.querySelectorAll('img[data-sha]')) {
+    const u = photoUrls.get(img.dataset.sha);
+    if (u) { if (img.getAttribute('src') !== u) img.src = u; }
+    else loadPhoto(img.dataset.id, img.dataset.sha);
+  }
+}
+
+function thumb(id, it) {
+  if (!it || !it.photo) return null;
+  return h('button', { class: 'thumbbtn', type: 'button', 'aria-label': 'Photo of ' + it.name, onclick: () => openPhoto(it) },
+    h('img', { alt: '', 'data-id': id, 'data-sha': it.photo }));
+}
+
+const lightbox = document.getElementById('lightbox');
+function openPhoto(it) {
+  const u = photoUrls.get(it.photo);
+  if (!u) return;
+  lightbox.querySelector('img').src = u;
+  lightbox.querySelector('p').textContent = it.name + ' · tap to close';
+  lightbox.hidden = false;
+}
+lightbox.addEventListener('click', () => { lightbox.hidden = true; });
+addEventListener('keydown', e => { if (e.key === 'Escape') lightbox.hidden = true; });
+
+let photoBusy = false;
+async function uploadPhoto(id, fileIn) {
+  const it = S.items.get(id);
+  if (!it || !fileIn || photoBusy) return;
+  photoBusy = true;
+  say('Saving photo…', 0);
+  try {
+    const blob = await shrink(fileIn);
+    const content = await blobB64(blob);
+    const put = sha => gh('PUT', { message: 'photo of ' + it.name, content, ...(sha ? { sha } : {}) }, photoPath(id));
+    let res;
+    try { res = await put(it.photo || undefined); }
+    catch (e) {
+      if (!e.conflict) throw e;
+      const cur = await gh('GET', null, photoPath(id)).catch(() => null);
+      res = await put(cur ? cur.sha : undefined);
+    }
+    keepPhoto(res.content.sha, blob);
+    if (await act({ op: 'setPhoto', id, photo: res.content.sha }, 'Photo not saved')) say('Photo saved.');
+  } catch (e) {
+    if (e.offline) say('Photo not saved: no connection. Try again once you have signal.', 9000);
+    else fail(e, 'Photo not saved');
+  } finally { photoBusy = false; }
+}
+
+async function removePhoto(id) {
+  const it = S.items.get(id);
+  if (!it || !it.photo || !arm('photo:' + id)) return;
+  try { await gh('DELETE', { message: 'remove photo of ' + it.name, sha: it.photo }, photoPath(id)); }
+  catch (e) { if (!e.notFound && !e.conflict) { fail(e, 'Photo not removed'); return; } }
+  await act({ op: 'setPhoto', id, photo: null }, 'Photo not removed');
+}
+
+// ---------- kits ----------
+
+async function addKit(input) {
+  const name = input.value.trim();
+  if (!name) return;
+  const newId = 'k' + rid();
+  if (await act({ op: 'addKit', name, newId }, 'Kit not added')) { S.editing = true; location.hash = 'kit=' + newId; }
+}
+
+const kitShort = k => k.lines.filter(l => S.items.has(l.item) && shownQty(l.item) < l.qty);
+
+async function takeKit(id) {
+  if (!arm('take:' + id)) return;
+  const r = await act({ op: 'takeKit', kit: id }, 'Kit not taken');
+  if (!r) return;
+  const { taken, short } = r.op.result;
+  S.lastTake = { kit: id, taken, short };
+  render();
+  const n = Object.keys(short).length;
+  say(n ? 'Kit taken, ' + plural(n, 'part', 'parts') + ' short.' : 'Kit taken.');
+}
+
+async function putBack(id) {
+  if (!S.lastTake || S.lastTake.kit !== id) return;
+  if (await act({ op: 'putBack', kit: id, taken: S.lastTake.taken }, 'Kit not put back')) {
+    S.lastTake = null;
+    render();
+    say('Kit put back.');
+  }
+}
+
+// ---------- stocktake ----------
+
+function startCount(boxId) {
+  if (queue.some(o => S.items.get(o.id)?.box === boxId)) {
+    drain();
+    say('Saving the last taps first. Tap Count box again in a moment.');
+    return;
+  }
+  S.counting = true;
+  S.editing = false;
+  render();
+}
+
+async function saveCount(boxId) {
+  const counts = {};
+  for (const [id] of itemsIn(boxId)) {
+    const el = document.getElementById('count-' + id);
+    const n = Number(el && el.value);
+    if (!el || el.value.trim() === '' || !Number.isInteger(n) || n < 0) { say('Count for ' + S.items.get(id).name + ' must be a whole number, 0 or more.'); if (el) el.focus(); return; }
+    counts[id] = n;
+  }
+  if (await act({ op: 'stocktake', box: boxId, counts }, 'Count not saved')) {
+    S.counting = false;
+    render();
+    say('Count saved.');
+  }
+}
+
 async function copy(text, btn) {
   try { await navigator.clipboard.writeText(text); btn.textContent = 'Copied'; }
   catch {
@@ -447,13 +654,27 @@ function listView() {
           h('span', { class: 'n', text: shownQty(id) + ' / ' + num(it.min) })))))));
   }
 
+  const kits = [...S.kits].sort(byName);
+  out.push(h('section', { class: 'panel' },
+    h('h2', { text: 'Install kits' }),
+    kits.length ? h('ul', { class: 'lowlist' }, kits.map(([id, k]) => {
+      const short = kitShort(k).length;
+      return h('li', null, h('a', { href: '#kit=' + encodeURIComponent(id) },
+        h('span', { class: 'what' }, k.name, h('small', { text: plural(k.lines.length, 'part', 'parts') })),
+        short ? h('span', { class: 'chip', text: short + ' short' }) : h('span', { class: 'chev', 'aria-hidden': 'true', text: '›' })));
+    })) : h('p', { text: 'A kit is the parts one install uses. Taking a kit takes every part out of its box in one go.' }),
+    h('form', { onsubmit: e => { e.preventDefault(); addKit(e.target.elements.kitName); } },
+      h('div', { class: 'row' },
+        h('input', { id: 'kitName', name: 'kitName', type: 'text', placeholder: 'e.g. Studio install', autocomplete: 'off', style: 'flex:1 1 200px', 'aria-label': 'Kit name' }),
+        h('button', { class: 'btn', type: 'submit', text: 'Add kit' })))));
+
   if (boxes.length) {
     out.push(h('ul', { class: 'list' }, boxes.map(([id, b]) => {
       const its = itemsIn(id);
       const lowN = its.filter(([iid, it]) => isLow(iid, it)).length;
       return h('li', null, h('a', { class: 'boxlink', href: '#box=' + encodeURIComponent(id) },
         h('div', null, h('div', { class: 'name', text: b.name }),
-          h('div', { class: 'item-sub' }, plural(its.length, 'item', 'items'), lowN ? h('span', { class: 'chip', text: lowN + ' low' }) : null)),
+          h('div', { class: 'item-sub' }, plural(its.length, 'item', 'items') + (b.checked ? ' · checked ' + ago(b.checked) : ''), lowN ? h('span', { class: 'chip', text: lowN + ' low' }) : null)),
         h('span', { class: 'chev', 'aria-hidden': 'true', text: '›' })));
     })));
   } else {
@@ -475,8 +696,21 @@ function boxView(id) {
   if (!box) return [back, ...notice('Box', 'No box with this tag', 'The box “' + id + '” was deleted or never added. Add it again from All boxes.')];
   const its = itemsIn(id);
   const editBtn = h('button', { class: 'btn', type: 'button', text: S.editing ? 'Done' : 'Edit items',
-    onclick: () => { S.editing = !S.editing; S.armed = null; render(); } });
-  const out = [back, header(box.name, boxMeta(id), editBtn, 'Box')];
+    onclick: () => { S.editing = !S.editing; S.counting = false; S.armed = null; render(); } });
+  const countBtn = its.length && !S.editing && !S.counting ? h('button', { class: 'btn', type: 'button', text: 'Count box', onclick: () => startCount(id) }) : null;
+  const out = [back, header(box.name, boxMeta(id), S.counting ? null : h('div', { class: 'row' }, countBtn, editBtn), 'Box')];
+
+  if (S.counting) {
+    out.push(h('div', { class: 'banner', text: 'Count what is in the box and type each number. Saving sets every count and marks the box checked today.' }));
+    out.push(h('ul', { class: 'list' }, its.map(([iid, it]) => h('li', { class: 'count-row' },
+      thumb(iid, it),
+      h('div', { class: 'item-main' }, h('div', { class: 'item-name', text: it.name }), h('div', { class: 'item-sub', text: 'was ' + shownQty(iid) + (it.unit ? ' ' + it.unit : '') })),
+      h('input', { id: 'count-' + iid, type: 'number', inputmode: 'numeric', min: '0', step: '1', value: String(shownQty(iid)), 'aria-label': 'Count of ' + it.name })))));
+    out.push(h('div', { class: 'row' },
+      h('button', { class: 'btn primary', type: 'button', text: 'Save count', onclick: () => saveCount(id) }),
+      h('button', { class: 'btn', type: 'button', text: 'Cancel', onclick: () => { S.counting = false; render(); } })));
+    return out;
+  }
 
   if (its.length) {
     out.push(h('ul', { class: 'list' }, its.map(([iid, it]) => S.editing ? editRow(iid, it) : itemRow(iid, it))));
@@ -510,14 +744,16 @@ function boxView(id) {
 function boxMeta(id) {
   const its = itemsIn(id);
   const last = its.map(([, it]) => it.updated || '').sort().pop();
-  return plural(its.length, 'item', 'items') + (last ? ' · last change ' + ago(last) : '');
+  const checked = S.boxes.get(id)?.checked;
+  return plural(its.length, 'item', 'items') + (last ? ' · last change ' + ago(last) : '') + (checked ? ' · checked ' + ago(checked) : ' · never counted');
 }
 
 function itemRow(id, it) {
   const q = shownQty(id);
   const low = isLow(id, it);
   const sub = [it.unit || null, hasMin(it) ? 'low at ' + num(it.min) : null].filter(Boolean).join(' · ');
-  return h('li', { class: 'item' + (low ? ' low' : '') },
+  return h('li', { class: 'item' + (low ? ' low' : '') + (it.photo ? ' has-photo' : '') },
+    thumb(id, it),
     h('div', { class: 'item-main' },
       h('div', { class: 'item-name', text: it.name }),
       h('div', { class: 'item-sub' }, low ? h('span', { class: 'chip', text: 'Low' }) : null, sub || null)),
@@ -536,7 +772,91 @@ function editRow(id, it) {
       h('input', { id: 'min-' + id, type: 'number', inputmode: 'numeric', min: '0', step: '1', value: hasMin(it) ? String(num(it.min)) : '',
         onchange: e => { const r = e.target.value.trim(); act({ op: 'editItem', id, min: r === '' ? '' : Math.max(0, Math.floor(num(r))) }, 'Low level not saved'); } }),
       h('span', { text: 'count ' + shownQty(id) })),
-    h('button', { class: 'btn danger' + (armed ? ' armed' : ''), type: 'button', text: armed ? 'Tap again' : 'Delete', onclick: () => deleteItem(id) }));
+    h('button', { class: 'btn danger' + (armed ? ' armed' : ''), type: 'button', text: armed ? 'Tap again' : 'Delete', onclick: () => deleteItem(id) }),
+    h('div', { class: 'photo-row' },
+      thumb(id, it),
+      h('label', { class: 'btn small' }, it.photo ? 'Replace photo' : 'Add photo',
+        h('input', { class: 'vh', type: 'file', accept: 'image/*', 'data-photo-for': id, onchange: e => uploadPhoto(id, e.target.files[0]) })),
+      it.photo ? h('button', { class: 'btn small danger' + (S.armed === 'photo:' + id ? ' armed' : ''), type: 'button',
+        text: S.armed === 'photo:' + id ? 'Tap again' : 'Remove photo', onclick: () => removePhoto(id) }) : null));
+}
+
+function kitView(id) {
+  const kit = S.kits.get(id);
+  const back = h('a', { class: 'back', href: '#' }, '‹ All boxes');
+  if (!kit) return [back, ...notice('Kit', 'No such kit', 'This kit was deleted. Add it again from All boxes.')];
+  const lines = kit.lines.filter(l => S.items.has(l.item));
+  const short = kitShort(kit);
+  const editBtn = h('button', { class: 'btn', type: 'button', text: S.editing ? 'Done' : 'Edit kit',
+    onclick: () => { S.editing = !S.editing; S.armed = null; render(); } });
+  const sub = plural(lines.length, 'part', 'parts') + (short.length ? ' · ' + short.length + ' short' : '');
+  const out = [back, header(kit.name, sub, editBtn, 'Install kit')];
+
+  if (S.lastTake && S.lastTake.kit === id && !S.editing) {
+    const took = Object.entries(S.lastTake.taken).map(([iid, n]) => (S.items.get(iid)?.name || 'removed item') + ' ' + n).join(', ');
+    const sh = Object.entries(S.lastTake.short).map(([iid, n]) => (S.items.get(iid)?.name || 'removed item') + ' ' + n).join(', ');
+    out.push(h('div', { class: 'panel took' },
+      h('h2', { text: 'Taken' }),
+      h('p', { text: (took || 'Nothing') + (sh ? '. Short: ' + sh + '.' : '.') }),
+      h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', text: 'Put it back', onclick: () => putBack(id) }))));
+  }
+
+  if (!lines.length && !S.editing) {
+    out.push(h('div', { class: 'panel empty' }, h('strong', { text: 'No parts listed' }), 'Tap Edit kit to list what one install uses.'));
+  }
+
+  if (lines.length) {
+    out.push(h('ul', { class: 'list' }, lines.map(l => {
+      const it = S.items.get(l.item);
+      const have = shownQty(l.item);
+      if (S.editing) {
+        return h('li', { class: 'kit-edit' },
+          h('div', { class: 'item-main' }, h('div', { class: 'item-name', text: it.name }), h('div', { class: 'item-sub', text: S.boxes.get(it.box)?.name || '' })),
+          h('input', { id: 'kq-' + l.item, type: 'number', inputmode: 'numeric', min: '1', step: '1', value: String(l.qty), 'aria-label': 'How many ' + it.name,
+            onchange: e => { const n = Math.floor(num(e.target.value)); if (n >= 1) act({ op: 'setKitLine', kit: id, item: l.item, qty: n }, 'Kit not saved'); } }),
+          h('button', { class: 'btn small danger', type: 'button', text: 'Remove', onclick: () => act({ op: 'setKitLine', kit: id, item: l.item, qty: 0 }, 'Kit not saved') }));
+      }
+      const isShort = have < l.qty;
+      return h('li', { class: 'kitline' + (isShort ? ' short' : '') },
+        thumb(l.item, it),
+        h('div', { class: 'item-main' },
+          h('div', { class: 'item-name', text: it.name }),
+          h('div', { class: 'item-sub' }, isShort ? h('span', { class: 'chip', text: 'short ' + (l.qty - have) }) : null,
+            (S.boxes.get(it.box)?.name || '') + ' · ' + have + ' in box')),
+        h('div', { class: 'need', text: '×' + l.qty }));
+    })));
+  }
+
+  if (S.editing) {
+    const inKit = new Set(kit.lines.map(l => l.item));
+    const choices = sortedBoxes().map(([bid, b]) => {
+      const opts = itemsIn(bid).filter(([iid]) => !inKit.has(iid));
+      return opts.length ? h('optgroup', { label: b.name }, opts.map(([iid, it]) => h('option', { value: iid, text: it.name }))) : null;
+    }).filter(Boolean);
+    out.push(h('form', { class: 'panel', onsubmit: e => {
+      e.preventDefault();
+      const el = e.target.elements;
+      const n = Math.floor(num(el.kitQty.value));
+      if (!el.kitItem.value || n < 1) { say('Pick a part and a quantity of 1 or more.'); return; }
+      act({ op: 'setKitLine', kit: id, item: el.kitItem.value, qty: n }, 'Part not added');
+    } },
+      h('h2', { text: 'Add a part' }),
+      choices.length ? h('div', { class: 'form' },
+        h('label', { class: 'full' }, 'Part', h('select', { id: 'kitItem', name: 'kitItem' }, choices)),
+        h('label', null, 'How many', h('input', { id: 'kitQty', name: 'kitQty', type: 'number', inputmode: 'numeric', min: '1', step: '1', value: '1' })),
+        h('button', { class: 'btn primary', type: 'submit', text: 'Add part' }))
+        : h('p', { text: 'Every listed item is already in this kit. Add items to a box first.' })));
+    out.push(h('div', { class: 'panel' }, h('h2', { text: 'Kit' }),
+      h('div', { class: 'row' }, h('button', { class: 'btn danger' + (S.armed === 'kit:' + id ? ' armed' : ''), type: 'button',
+        text: S.armed === 'kit:' + id ? 'Tap again to delete kit' : 'Delete kit',
+        onclick: async () => { if (!arm('kit:' + id)) return; if (await act({ op: 'deleteKit', id }, 'Kit not deleted')) location.hash = ''; } }))));
+  } else if (lines.length) {
+    const armed = S.armed === 'take:' + id;
+    out.push(h('button', { class: 'btn primary block' + (armed ? ' armed' : ''), type: 'button',
+      text: armed ? 'Tap again to take ' + kit.name : 'Take kit', onclick: () => takeKit(id) }));
+    out.push(h('p', { class: 'foot', text: 'Takes every part above out of its box. A short part takes what is there.' }));
+  }
+  return out;
 }
 
 function paintQty(id) {
@@ -569,7 +889,7 @@ function render() {
   else if (!KEY) kids = [...notice('Box Stock', 'Tap a box tag', 'Hold your phone to the NFC tag on a Renegade box to open its stock.'), codeForm()];
   else if (S.badKey) kids = [...notice('Box Stock', 'This tag code no longer works', 'It may have expired or been replaced. Tap a box tag with the new link, or ask Ethan for one.'), codeForm()];
   else if (!S.loaded) kids = [header(S.view ? 'Box' : 'Box Stock', S.offline ? 'Can’t reach the stock list yet. It keeps trying.' : 'Loading…')];
-  else kids = S.view ? boxView(S.view) : listView();
+  else kids = S.kitView ? kitView(S.kitView) : S.view ? boxView(S.view) : listView();
   app.replaceChildren(...kids);
 
   // Name and low-level fields show the saved value unless that field has focus.
@@ -580,6 +900,7 @@ function render() {
   }
   if (focus) { const f = document.getElementById(focus); if (f) f.focus(); }
   paintSync();
+  paintPhotos();
   shape = shapeKey();
 }
 
@@ -587,12 +908,13 @@ function render() {
 // while someone is tapping would drop a tap.
 let shape = '';
 function shapeKey() {
-  return JSON.stringify([S.view, S.editing, S.armed, S.badKey, S.loaded, S.offline && !S.loaded,
-    [...S.boxes].map(([id, b]) => [id, b.name, b.order]),
-    [...S.items].map(([id, it]) => [id, it.box, it.name, it.unit, it.min])]);
+  return JSON.stringify([S.view, S.kitView, S.editing, S.counting, S.armed, S.badKey, S.loaded, S.offline && !S.loaded, S.lastTake,
+    [...S.boxes].map(([id, b]) => [id, b.name, b.order, b.checked]),
+    [...S.items].map(([id, it]) => [id, it.box, it.name, it.unit, it.min, it.photo]),
+    [...S.kits].map(([id, k]) => [id, k.name, k.lines])]);
 }
 function refresh() {
-  if (S.view && !S.editing && shapeKey() === shape) {
+  if (S.view && !S.editing && !S.counting && shapeKey() === shape) {
     for (const id of S.items.keys()) paintQty(id);
     const meta = app.querySelector('.headrow .meta');
     if (meta && S.boxes.has(S.view)) meta.textContent = boxMeta(S.view);
@@ -619,8 +941,11 @@ function route() {
     history.replaceState(null, '', location.pathname + location.search + '#' + p);
   }
   S.view = p.get('box');
+  S.kitView = p.get('kit');
   S.editing = false;
+  S.counting = false;
   S.armed = null;
+  lightbox.hidden = true;
   render();
   scrollTo(0, 0);
 }

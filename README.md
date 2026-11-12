@@ -9,6 +9,28 @@ The counts live in `stock.json` in the private repo
 is the stock log: `50 mm PVC elbows -2 = 10`. Taps made in a burst go out as
 one commit.
 
+## Install kits
+
+A kit is the parts one install uses, for example `Studio install`: 4 elbows,
+1 skimmer lid. Add one under Install kits on the All boxes page, then Edit
+kit to list its parts from any box. Take kit (tap twice) takes every part
+out of its box in one commit. A part short of stock takes what is there and
+shows as short. Put it back, shown straight after, undoes exactly that take.
+
+## Count a box
+
+Count box on a box page swaps the steppers for number fields. Type what is
+really there and Save count: every count is set and the box shows "checked"
+with the date. Taps still waiting to save go out first.
+
+## Item photos
+
+Edit items > Add photo takes or picks a photo. The phone shrinks it to at
+most 1000 px as a JPEG of about 150 KB, which also drops the photo's GPS
+position, and saves it as `images/<item id>.jpg` in `box-stock-data`. Each
+phone downloads a photo once and keeps it. Replacing or removing a photo
+leaves the old one in the repo history.
+
 ## Make the tag code (once)
 
 The tag code is a fine-grained GitHub token that can only read and write
