@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Box Stock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+/* Layout: one narrow column sized for a phone held on site; big steppers, gloves-friendly targets. */
+:root {
+  --bg: #f2f6f5; --surface: #ffffff; --fg: #10201f; --muted: #586c6a; --line: #d3dedc;
+  --accent: #0e7774; --accent-fg: #ffffff; --accent-soft: #dcefed;
+  --low: #b3261e; --low-bg: #fbe8e6;
+  --display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0c1413; --surface: #14201e; --fg: #e4eeec; --muted: #91a5a2; --line: #253b38;
+    --accent: #3dbdb5; --accent-fg: #04201e; --accent-soft: #163331;
+    --low: #ff8f85; --low-bg: #3a1815; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: calc(20px + env(safe-area-inset-top, 0px)) calc(96px + env(safe-area-inset-bottom, 0px));
+}
+[hidden] { display: none !important; }
+.wrap { max-width: 560px; margin: 0 auto; display: grid; gap: 20px; }
+.eyebrow { font: 600 12px/1 var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font: 700 2.4rem/1 var(--display); letter-spacing: .01em; margin: 6px 0 0; text-wrap: balance; overflow-wrap: anywhere; }
+h2 { font: 700 1.25rem/1.1 var(--display); letter-spacing: .03em; text-transform: uppercase; margin: 0; color: var(--muted); }
+.meta { color: var(--muted); font-size: 13px; margin-top: 6px; }
+a { color: var(--accent); }
+.back { font-weight: 600; text-decoration: none; display: inline-block; padding: 6px 0; }
+.headrow { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.headrow > div { min-width: 0; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; touch-action: manipulation; }
+button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 10px 14px; font-weight: 600; }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.btn.danger { color: var(--low); border-color: var(--low); background: transparent; }
+.btn.armed { background: var(--low); color: var(--surface); }
+.btn:disabled { opacity: .5; cursor: default; }
+
+.list { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.list > li { background: var(--surface); }
+.boxlink { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; color: inherit; text-decoration: none; min-height: 64px; }
+.boxlink .name { font: 700 1.35rem/1.1 var(--display); overflow-wrap: anywhere; }
+.boxlink > div { min-width: 0; }
+.chev { color: var(--muted); font-size: 22px; }
+
+.item { display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 16px; min-height: 76px; }
+.item-main { flex: 1; min-width: 0; }
+.item-name { font-weight: 600; font-size: 16px; overflow-wrap: anywhere; }
+.item-sub { color: var(--muted); font-size: 13px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 2px; }
+.chip { font: 600 11px/1 var(--body); letter-spacing: .06em; text-transform: uppercase; padding: 4px 7px; border-radius: 999px; background: var(--low-bg); color: var(--low); }
+.item.low { box-shadow: inset 4px 0 0 var(--low); }
+.stepper { display: flex; align-items: center; gap: 4px; flex: none; }
+.step { width: 56px; height: 56px; border-radius: 12px; border: 1px solid var(--line); background: var(--accent-soft); color: var(--accent); font: 700 30px/1 var(--display); display: grid; place-items: center; user-select: none; -webkit-user-select: none; }
+.step:active { background: var(--accent); color: var(--accent-fg); }
+.step:disabled { opacity: .35; cursor: default; }
+.qty { font: 700 2.1rem/1 var(--display); min-width: 2.4ch; text-align: center; font-variant-numeric: tabular-nums; }
+.item.low .qty { color: var(--low); }
+.qty.dirty { opacity: .6; }
+
+.edit-row { display: grid; grid-template-columns: 1fr auto; gap: 8px 10px; padding: 14px 16px; }
+.edit-row .field { grid-column: 1 / -1; }
+.edit-row label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+input[type="text"], input[type="number"] { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.edit-row input[type="number"] { width: 5.5em; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 12px; }
+.panel p { margin: 0; color: var(--muted); font-size: 13px; }
+.form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.form .full { grid-column: 1 / -1; }
+.form label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.taglink { font: 500 13px/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+.lowlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.lowlist a { display: flex; justify-content: space-between; gap: 12px; text-decoration: none; color: inherit; padding: 10px 12px; border-radius: 10px; background: var(--low-bg); }
+.lowlist .n { font: 700 1.2rem/1 var(--display); color: var(--low); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lowlist span { min-width: 0; overflow-wrap: anywhere; }
+
+.empty { text-align: center; padding: 28px 16px; color: var(--muted); }
+.empty strong { display: block; color: var(--fg); font: 700 1.4rem/1.1 var(--display); margin-bottom: 6px; }
+.banner { padding: 10px 14px; border-radius: 10px; background: var(--accent-soft); font-size: 13px; }
+.foot { text-align: center; font-size: 13px; color: var(--muted); }
+
+#status { position: fixed; left: 0; right: 0; bottom: 0; padding: 0 max(16px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); display: flex; justify-content: center; pointer-events: none; }
+#status div { max-width: 560px; width: 100%; background: var(--fg); color: var(--bg); padding: 12px 16px; border-radius: 12px; font-size: 14px; pointer-events: auto; }
+@media (prefers-reduced-motion: no-preference) { .step { transition: background .08s; } }
+</style>
+<script src="config.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <div class="banner" id="sync" hidden></div>
+  <div class="wrap" id="app">
+    <div>
+      <div class="eyebrow">Yarvo install stock</div>
+      <h1>Box Stock</h1>
+      <div class="meta">Loading…</div>
+    </div>
+  </div>
+</div>
+<div id="status" aria-live="polite"></div>
+
+<script>
+const API = window.STOCK_API || '';
+const QKEY = 'box-stock-queue';
+const KKEY = 'box-stock-key';
+
+const app = document.getElementById('app');
+const syncEl = document.getElementById('sync');
+const statusEl = document.getElementById('status');
+const S = {
+  boxes: new Map(), items: new Map(), sheet: '', loaded: false,
+  offline: false, badKey: false, editing: false, armed: null, view: null,
+};
+let KEY = null;
+try { KEY = localStorage.getItem(KKEY); } catch {}
+
+// Taps not yet confirmed by the sheet. Kept in localStorage so a locked
+// phone or closed tab does not lose them; each keeps its request id, so a
+// resend after lost signal is applied once by the script.
+let queue = [];
+try { queue = JSON.parse(localStorage.getItem(QKEY) || '[]'); } catch {}
+function saveQueue() { try { localStorage.setItem(QKEY, JSON.stringify(queue)); } catch {} }
+const rid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  if (props) for (const [k, v] of Object.entries(props)) {
+    if (v == null || v === false) continue;
+    if (k === 'class') el.className = v;
+    else if (k === 'text') el.textContent = v;
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (k === 'value') el.value = v;
+    else el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of kids.flat()) {
+    if (c == null || c === false) continue;
+    el.append(c.nodeType ? c : document.createTextNode(String(c)));
+  }
+  return el;
+}
+
+const canEdit = () => !!API && !!KEY && !S.badKey;
+const num = v => (Number.isFinite(Number(v)) ? Number(v) : 0);
+const hasMin = it => it.min !== null && it.min !== undefined && it.min !== '';
+const queued = id => queue.reduce((s, o) => s + (o.id === id ? o.delta : 0), 0);
+const shownQty = id => Math.max(0, num(S.items.get(id)?.qty) + queued(id));
+const isLow = (id, it) => hasMin(it) && shownQty(id) <= num(it.min);
+const byName = (a, b) => String(a[1].name || '').localeCompare(String(b[1].name || ''), undefined, { numeric: true, sensitivity: 'base' });
+const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
+const tagUrl = id => location.origin + location.pathname + '#box=' + encodeURIComponent(id) + '&k=' + encodeURIComponent(KEY);
+
+function itemsIn(boxId) { return [...S.items].filter(([, it]) => it.box === boxId).sort(byName); }
+function sortedBoxes() { return [...S.boxes].sort((a, b) => num(a[1].order) - num(b[1].order) || byName(a, b)); }
+
+function ago(iso) {
+  const t = Date.parse(iso);
+  if (!t) return '';
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.round(s / 60) + ' min ago';
+  if (s < 86400) return Math.round(s / 3600) + ' h ago';
+  const d = Math.round(s / 86400);
+  return d === 1 ? 'yesterday' : d + ' days ago';
+}
+
+let statusTimer;
+function say(msg, ms = 6000) {
+  statusEl.replaceChildren(msg ? h('div', { text: msg }) : '');
+  clearTimeout(statusTimer);
+  if (msg && ms) statusTimer = setTimeout(() => say(''), ms);
+}
+
+// ---------- talking to the sheet ----------
+
+// text/plain keeps the request "simple", so the browser sends no CORS preflight,
+// which Apps Script cannot answer.
+async function post(body) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 20000);
+  try {
+    const r = await fetch(API, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ ...body, k: KEY }), signal: ctl.signal,
+    });
+    const text = await r.text();
+    try { return JSON.parse(text); }
+    catch { const e = new Error('The stock script sent back a page instead of data. Check its deployment is set to Anyone.'); e.server = true; throw e; }
+  } finally { clearTimeout(t); }
+}
+
+function applyState(res) {
+  S.boxes = new Map(res.boxes.map(b => [b.id, b]));
+  S.items = new Map(res.items.map(i => [i.id, i]));
+  S.sheet = res.sheet || '';
+  S.loaded = true;
+  S.offline = false;
+}
+
+function serverError(res, what) {
+  if (res.code === 'bad_key') { S.badKey = true; render(); return; }
+  say(what + ': ' + res.error, 9000);
+}
+
+let sendTimer, retryTimer, draining = false;
+async function drain() {
+  clearTimeout(sendTimer);
+  if (draining || !queue.length || !canEdit()) return;
+  draining = true;
+  try {
+    while (queue.length) {
+      const op = queue[0];
+      op.sent = true;
+      saveQueue();
+      let res;
+      try {
+        res = await post({ rid: op.rid, op: 'bump', id: op.id, delta: op.delta });
+      } catch (e) {
+        S.offline = !e.server;
+        if (e.server) say(e.message, 9000);
+        clearTimeout(retryTimer);
+        retryTimer = setTimeout(drain, 8000);
+        return;
+      }
+      if (res.code === 'busy') { clearTimeout(retryTimer); retryTimer = setTimeout(drain, 2000); return; }
+      queue.shift();
+      saveQueue();
+      if (res.error) { serverError(res, 'Count not saved'); if (S.badKey) return; continue; }
+      applyState(res);
+    }
+  } finally {
+    draining = false;
+    refresh();
+  }
+}
+
+function bump(id, d) {
+  if (!canEdit() || !S.items.has(id)) return;
+  const shown = shownQty(id);
+  if (shown + d < 0) return;
+  const last = queue[queue.length - 1];
+  if (last && !last.sent && last.id === id) {
+    last.delta += d;
+    if (!last.delta) queue.pop();
+  } else {
+    queue.push({ rid: rid(), op: 'bump', id, delta: d });
+  }
+  saveQueue();
+  paintQty(id);
+  paintSync();
+  clearTimeout(sendTimer);
+  sendTimer = setTimeout(drain, 700);
+}
+
+async function poll() {
+  if (!API || !KEY || S.badKey || draining || queue.length || document.visibilityState === 'hidden') return;
+  try {
+    const res = await post({ op: 'read' });
+    if (res.error) serverError(res, 'Could not load stock');
+    else if (!draining && !queue.length) applyState(res);
+  } catch (e) {
+    if (e.server) say(e.message, 9000);
+    else S.offline = true;
+  }
+  refresh();
+}
+
+// One-off actions (adding, renaming, deleting) need signal and report back.
+let acting = false;
+async function act(body, what) {
+  if (acting) { say('Still saving the last change. Try again in a moment.'); return null; }
+  acting = true;
+  try {
+    const res = await post(body);
+    if (res.error) { serverError(res, what); return null; }
+    applyState(res);
+    return res;
+  } catch (e) {
+    say(e.server ? e.message : what + ': no connection. Try again once you have signal.', 9000);
+    return null;
+  } finally {
+    acting = false;
+    render();
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') drain(); else { drain(); poll(); }
+});
+addEventListener('online', () => { drain(); poll(); });
+setInterval(poll, 20000);
+
+// ---------- actions ----------
+
+async function addBox(input) {
+  const name = input.value.trim();
+  if (!name) return;
+  const before = new Set(S.boxes.keys());
+  if (await act({ op: 'addBox', name }, 'Box not added')) {
+    const id = [...S.boxes.keys()].find(k => !before.has(k));
+    if (id) location.hash = 'box=' + encodeURIComponent(id);
+    say('Added ' + name + '. Write its tag link from the bottom of its page.');
+  }
+}
+
+async function addItem(boxId, form) {
+  const el = form.elements;
+  const name = el.itemName.value.trim();
+  if (!name) return;
+  const ok = await act({ op: 'addItem', box: boxId, name, unit: el.itemUnit.value.trim(),
+    qty: Math.max(0, Math.floor(num(el.itemQty.value))), min: el.itemMin.value.trim() === '' ? '' : Math.max(0, Math.floor(num(el.itemMin.value))) }, 'Item not added');
+  if (ok) { form.reset(); const f = document.getElementById('itemName'); if (f) f.focus(); }
+}
+
+function arm(key) {
+  if (S.armed === key) { S.armed = null; return true; }
+  S.armed = key;
+  render();
+  setTimeout(() => { if (S.armed === key) { S.armed = null; render(); } }, 4000);
+  return false;
+}
+
+async function deleteItem(id) {
+  if (!arm('item:' + id)) return;
+  queue = queue.filter(o => o.id !== id || o.sent);
+  saveQueue();
+  await act({ op: 'deleteItem', id }, 'Item not deleted');
+}
+
+async function deleteBox(id) {
+  if (!arm('box:' + id)) return;
+  if (await act({ op: 'deleteBox', id }, 'Box not deleted')) { location.hash = ''; say('Box deleted. Wipe or reuse its NFC tag.'); }
+}
+
+async function copy(text, btn) {
+  try { await navigator.clipboard.writeText(text); btn.textContent = 'Copied'; }
+  catch {
+    const el = btn.closest('.panel').querySelector('.taglink');
+    if (el) getSelection().selectAllChildren(el);
+    btn.textContent = 'Selected, copy it';
+  }
+  setTimeout(() => { btn.textContent = 'Copy link'; }, 2500);
+}
+
+// ---------- views ----------
+
+function header(title, sub, extra) {
+  return h('div', { class: 'headrow' },
+    h('div', null, h('div', { class: 'eyebrow', text: 'Yarvo install stock' }), h('h1', { text: title }), sub ? h('div', { class: 'meta', text: sub }) : null),
+    extra || null);
+}
+
+function notice(title, strong, body) {
+  return [header(title), h('div', { class: 'panel empty' }, h('strong', { text: strong }), body)];
+}
+
+function listView() {
+  const boxes = sortedBoxes();
+  const out = [header('Box Stock', boxes.length ? plural(boxes.length, 'box', 'boxes') + ', ' + plural(S.items.size, 'item', 'items') : 'No boxes listed yet.')];
+
+  const low = [...S.items].filter(([id, it]) => S.boxes.has(it.box) && isLow(id, it)).sort(byName);
+  if (low.length) {
+    out.push(h('section', { class: 'panel' },
+      h('h2', { text: 'Running low' }),
+      h('ul', { class: 'lowlist' }, low.map(([id, it]) => h('li', null,
+        h('a', { href: '#box=' + encodeURIComponent(it.box) },
+          h('span', null, h('strong', { text: it.name }), ' · ' + S.boxes.get(it.box).name),
+          h('span', { class: 'n', text: shownQty(id) + ' / ' + num(it.min) })))))));
+  }
+
+  if (boxes.length) {
+    out.push(h('ul', { class: 'list' }, boxes.map(([id, b]) => {
+      const its = itemsIn(id);
+      const lowN = its.filter(([iid, it]) => isLow(iid, it)).length;
+      return h('li', null, h('a', { class: 'boxlink', href: '#box=' + encodeURIComponent(id) },
+        h('div', null, h('div', { class: 'name', text: b.name }),
+          h('div', { class: 'item-sub' }, plural(its.length, 'item', 'items'), lowN ? h('span', { class: 'chip', text: lowN + ' low' }) : null)),
+        h('span', { class: 'chev', 'aria-hidden': 'true', text: '›' })));
+    })));
+  } else {
+    out.push(h('div', { class: 'panel empty' }, h('strong', { text: 'No boxes yet' }), 'Add the first Renegade box below, then write its link to an NFC tag.'));
+  }
+
+  out.push(h('form', { class: 'panel', onsubmit: e => { e.preventDefault(); addBox(e.target.elements.boxName); } },
+    h('h2', { text: 'Add a box' }),
+    h('div', { class: 'row' },
+      h('input', { id: 'boxName', name: 'boxName', type: 'text', placeholder: 'e.g. Renegade 1 Plumbing', autocomplete: 'off', style: 'flex:1 1 200px', 'aria-label': 'Box name' }),
+      h('button', { class: 'btn primary', type: 'submit', text: 'Add box' }))));
+  if (S.sheet) out.push(h('div', { class: 'foot' }, h('a', { href: S.sheet, target: '_blank', rel: 'noopener', text: 'Open the stock sheet' }), ' (needs access to the Google Sheet)'));
+  return out;
+}
+
+function boxView(id) {
+  const box = S.boxes.get(id);
+  const back = h('a', { class: 'back', href: '#' }, '‹ All boxes');
+  if (!box) return [back, ...notice('Box', 'No box with this tag', 'The box “' + id + '” was deleted or never added. Add it again from All boxes.')];
+  const its = itemsIn(id);
+  const editBtn = h('button', { class: 'btn', type: 'button', text: S.editing ? 'Done' : 'Edit items',
+    onclick: () => { S.editing = !S.editing; S.armed = null; render(); } });
+  const out = [back, header(box.name, boxMeta(id), editBtn)];
+
+  if (its.length) {
+    out.push(h('ul', { class: 'list' }, its.map(([iid, it]) => S.editing ? editRow(iid, it) : itemRow(iid, it))));
+  } else if (!S.editing) {
+    out.push(h('div', { class: 'panel empty' }, h('strong', { text: 'Nothing in this box yet' }), 'Tap Edit items to list what lives in it.'));
+  }
+
+  if (S.editing) {
+    out.push(h('form', { class: 'panel', onsubmit: e => { e.preventDefault(); addItem(id, e.target); } },
+      h('h2', { text: 'Add an item' }),
+      h('div', { class: 'form' },
+        h('label', { class: 'full' }, 'Item', h('input', { id: 'itemName', name: 'itemName', type: 'text', placeholder: 'e.g. 50 mm PVC elbows', autocomplete: 'off', required: true })),
+        h('label', null, 'Unit (optional)', h('input', { id: 'itemUnit', name: 'itemUnit', type: 'text', placeholder: 'each, bags, m', autocomplete: 'off' })),
+        h('label', null, 'Count now', h('input', { id: 'itemQty', name: 'itemQty', type: 'number', inputmode: 'numeric', min: '0', step: '1', placeholder: '0' })),
+        h('label', { class: 'full' }, 'Flag as low at or below (optional)', h('input', { id: 'itemMin', name: 'itemMin', type: 'number', inputmode: 'numeric', min: '0', step: '1' })),
+        h('button', { class: 'btn primary full', type: 'submit', text: 'Add item' }))));
+    out.push(h('div', { class: 'panel' }, h('h2', { text: 'Box' }),
+      its.length ? h('p', { text: 'Delete every item to delete this box.' })
+        : h('div', { class: 'row' }, h('button', { class: 'btn danger' + (S.armed === 'box:' + id ? ' armed' : ''), type: 'button',
+            text: S.armed === 'box:' + id ? 'Tap again to delete box' : 'Delete box', onclick: () => deleteBox(id) }))));
+  }
+
+  out.push(h('section', { class: 'panel' },
+    h('h2', { text: 'NFC tag' }),
+    h('div', { class: 'taglink', text: tagUrl(id) }),
+    h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', text: 'Copy link', onclick: e => copy(tagUrl(id), e.currentTarget) })),
+    h('p', { text: 'Write this link to the tag on this box as a URL record. The link carries the code that lets a phone change counts, so keep it on the tags.' })));
+  return out;
+}
+
+function boxMeta(id) {
+  const its = itemsIn(id);
+  const last = its.map(([, it]) => it.updated || '').sort().pop();
+  return plural(its.length, 'item', 'items') + (last ? ' · last change ' + ago(last) : '');
+}
+
+function itemRow(id, it) {
+  const q = shownQty(id);
+  const low = isLow(id, it);
+  const sub = [it.unit || null, hasMin(it) ? 'low at ' + num(it.min) : null].filter(Boolean).join(' · ');
+  return h('li', { class: 'item' + (low ? ' low' : '') },
+    h('div', { class: 'item-main' },
+      h('div', { class: 'item-name', text: it.name }),
+      h('div', { class: 'item-sub' }, low ? h('span', { class: 'chip', text: 'Low' }) : null, sub || null)),
+    h('div', { class: 'stepper' },
+      h('button', { class: 'step minus', type: 'button', 'aria-label': 'Take one ' + it.name, disabled: q <= 0, onclick: () => bump(id, -1), text: '−' }),
+      h('output', { class: 'qty' + (queued(id) ? ' dirty' : ''), 'data-qty': id, text: q }),
+      h('button', { class: 'step plus', type: 'button', 'aria-label': 'Add one ' + it.name, onclick: () => bump(id, 1), text: '+' })));
+}
+
+function editRow(id, it) {
+  const armed = S.armed === 'item:' + id;
+  return h('li', { class: 'edit-row' },
+    h('input', { class: 'field', id: 'name-' + id, type: 'text', value: it.name, 'aria-label': 'Item name',
+      onchange: e => { const v = e.target.value.trim(); if (v && v !== it.name) act({ op: 'editItem', id, name: v }, 'Name not saved'); } }),
+    h('label', null, 'Low at',
+      h('input', { id: 'min-' + id, type: 'number', inputmode: 'numeric', min: '0', step: '1', value: hasMin(it) ? String(num(it.min)) : '',
+        onchange: e => { const r = e.target.value.trim(); act({ op: 'editItem', id, min: r === '' ? '' : Math.max(0, Math.floor(num(r))) }, 'Low level not saved'); } }),
+      h('span', { text: 'count ' + shownQty(id) })),
+    h('button', { class: 'btn danger' + (armed ? ' armed' : ''), type: 'button', text: armed ? 'Tap again' : 'Delete', onclick: () => deleteItem(id) }));
+}
+
+function paintQty(id) {
+  const out = app.querySelector('[data-qty="' + CSS.escape(id) + '"]');
+  if (!out) return;
+  const q = shownQty(id);
+  out.textContent = q;
+  out.classList.toggle('dirty', !!queued(id));
+  const li = out.closest('.item');
+  const it = S.items.get(id);
+  if (li && it) li.classList.toggle('low', isLow(id, it));
+  const minus = li && li.querySelector('.minus');
+  if (minus) minus.disabled = q <= 0;
+}
+
+function paintSync() {
+  const n = queue.length;
+  syncEl.hidden = !(n && S.offline);
+  syncEl.textContent = n ? plural(n, 'change', 'changes') + ' waiting for signal. They send by themselves; keep this page open or come back to it.' : '';
+}
+
+// Snapshots rebuild the view; keep whatever someone is half way through typing.
+function render() {
+  const keep = {};
+  for (const el of app.querySelectorAll('input[id]')) keep[el.id] = el.value;
+  const focus = document.activeElement && app.contains(document.activeElement) ? document.activeElement.id : null;
+
+  let kids;
+  if (!API) kids = notice('Box Stock', 'Not connected yet', 'config.js has no stock script address. Add the Apps Script web app URL to it.');
+  else if (!KEY) kids = notice('Box Stock', 'Tap a box tag', 'Hold your phone to the NFC tag on a Renegade box to open its stock.');
+  else if (S.badKey) kids = notice('Box Stock', 'This tag link is out of date', 'The stock code changed. Tap a box tag that has the new link, or ask Ethan for one.');
+  else if (!S.loaded) kids = [header(S.view ? 'Box' : 'Box Stock', S.offline ? 'Can’t reach the stock sheet yet. It keeps trying.' : 'Loading…')];
+  else kids = S.view ? boxView(S.view) : listView();
+  app.replaceChildren(...kids);
+
+  // Name and low-level fields show the sheet's value unless that field has focus.
+  for (const el of app.querySelectorAll('input[id]')) {
+    if (!(el.id in keep)) continue;
+    const sheetField = el.id.startsWith('name-') || el.id.startsWith('min-');
+    if (!sheetField || el.id === focus) el.value = keep[el.id];
+  }
+  if (focus) { const f = document.getElementById(focus); if (f) f.focus(); }
+  paintSync();
+  shape = shapeKey();
+}
+
+// A count change alone repaints the numbers in place. Rebuilding the buttons
+// while someone is tapping would drop a tap.
+let shape = '';
+function shapeKey() {
+  return JSON.stringify([S.view, S.editing, S.armed, S.badKey, S.loaded, S.offline && !S.loaded,
+    [...S.boxes].map(([id, b]) => [id, b.name, b.order]),
+    [...S.items].map(([id, it]) => [id, it.box, it.name, it.unit, it.min])]);
+}
+function refresh() {
+  if (S.view && !S.editing && shapeKey() === shape) {
+    for (const id of S.items.keys()) paintQty(id);
+    const meta = app.querySelector('.headrow .meta');
+    if (meta && S.boxes.has(S.view)) meta.textContent = boxMeta(S.view);
+    paintSync();
+    return;
+  }
+  render();
+}
+
+// A tag link is #box=<id>&k=<key>. The key is kept on the phone and taken out
+// of the address bar, so a screenshot of the page does not show it.
+function route() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  const k = p.get('k');
+  if (k) {
+    KEY = k;
+    S.badKey = false;
+    try { localStorage.setItem(KKEY, k); } catch {}
+    p.delete('k');
+    const rest = p.toString();
+    history.replaceState(null, '', location.pathname + location.search + (rest ? '#' + rest : ''));
+    if (!S.loaded) setTimeout(poll);
+  }
+  S.view = p.get('box');
+  S.editing = false;
+  S.armed = null;
+  render();
+  scrollTo(0, 0);
+}
+addEventListener('hashchange', route);
+
+route();
+drain();
+poll();
+</script>
+</body>
+</html>
