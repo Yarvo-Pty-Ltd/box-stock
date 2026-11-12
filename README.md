@@ -27,6 +27,19 @@ The Web app URL is safe to commit. The key is not: it goes only on the tags.
 3. In an NFC writer app (NFC Tools on iPhone or Android), write the link to
    an NTAG215 sticker as a URL record, then stick it on the box.
 
+## Add it to the home screen
+
+Tap a box tag first, so the address carries the key, then in Safari use
+Share > Add to Home Screen. The icon opens the app at that box. An NFC tap
+still opens Safari, not the home screen app: iOS sends every tag to Safari.
+
+`manifest.webmanifest` has no `start_url` on purpose. Without one the app
+opens at the address it was added from, which is what carries the key.
+
+Icons live in `assets/icons/`: `icon-1024.png` is the master (also the App
+Store size), the others are cut from it. The art came from Codex imagegen,
+and the wordmark on top is the site's own Inter Tight 700 in `#008A8A`.
+
 ## Change the key
 
 Anyone who reads a tag has the key. To cut off old links, run `newKey` in the

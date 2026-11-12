@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
 <title>Box Stock</title>
+<meta name="theme-color" content="#E1D2BF">
+<meta name="apple-mobile-web-app-title" content="Box Stock">
+<link rel="icon" href="assets/icons/favicon.ico" sizes="any">
+<link rel="icon" href="assets/icons/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="assets/fonts.css">
 <style>
 /* Layout: one narrow column on the Yarvo paper page, cards and hairlines as on the
@@ -553,19 +559,21 @@ function refresh() {
   render();
 }
 
-// A tag link is #box=<id>&k=<key>. The key is kept on the phone and taken out
-// of the address bar, so a screenshot of the page does not show it.
+// A tag link is #box=<id>&k=<key>. The key stays in the address on every view:
+// an iPhone home screen app keeps its own storage apart from Safari's, so the
+// address it is added from is the only way the key reaches it.
 function route() {
   const p = new URLSearchParams(location.hash.slice(1));
   const k = p.get('k');
-  if (k) {
+  if (k && k !== KEY) {
     KEY = k;
     S.badKey = false;
     try { localStorage.setItem(KKEY, k); } catch {}
-    p.delete('k');
-    const rest = p.toString();
-    history.replaceState(null, '', location.pathname + location.search + (rest ? '#' + rest : ''));
     if (!S.loaded) setTimeout(poll);
+  }
+  if (!k && KEY) {
+    p.set('k', KEY);
+    history.replaceState(null, '', location.pathname + location.search + '#' + p);
   }
   S.view = p.get('box');
   S.editing = false;
